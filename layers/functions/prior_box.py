@@ -34,20 +34,20 @@ class PriorBox(object):
         # TODO merge these
         if self.version == 'v2':
             for k, f in enumerate(self.feature_maps):
+                f_k = self.image_size / self.steps[k]
+                s_k = self.min_sizes[k]/self.image_size
+                s_k_prime = sqrt(s_k * (self.max_sizes[k]/self.image_size))
                 for i, j in product(range(f), repeat=2):
-                    f_k = self.image_size / self.steps[k]
                     # unit center x,y
                     cx = (j + 0.5) / f_k
                     cy = (i + 0.5) / f_k
 
                     # aspect_ratio: 1
                     # rel size: min_size
-                    s_k = self.min_sizes[k]/self.image_size
                     mean += [cx, cy, s_k, s_k]
 
                     # aspect_ratio: 1
                     # rel size: sqrt(s_k * s_(k+1))
-                    s_k_prime = sqrt(s_k * (self.max_sizes[k]/self.image_size))
                     mean += [cx, cy, s_k_prime, s_k_prime]
 
                     # rest of aspect ratios
