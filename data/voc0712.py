@@ -99,7 +99,7 @@ class VOCDetection(data.Dataset):
     """
 
     def __init__(self, root, image_sets, transform=None, target_transform=None,
-                 dataset_name='VOC0712'):
+                 dataset_name='VOC0712', limit_num_ims=None):
         self.root = root
         self.image_set = image_sets
         self.transform = transform
@@ -118,6 +118,8 @@ class VOCDetection(data.Dataset):
             lst_filepath = os.path.join(rootpath, 'ImageSets', 'Main', name + '.txt')
             print("Loading data from " + lst_filepath)
             for line in open(lst_filepath):
+                if limit_num_ims != None and len(self.ids) >= limit_num_ims:
+                    break
                 self.ids.append((rootpath, line.strip()))
         print("Loaded %d images" % len(self.ids))
 

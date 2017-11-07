@@ -108,6 +108,103 @@ class SSD(nn.Module):
             )
         return output
 
+    def save_weights(self, dirpath):
+        import numpy as np
+        vgg_t = {0: (1,), \
+                2: (3,), \
+                5: (6,), \
+                7: (8,), \
+                10: (11,), \
+                12: (13,), \
+                14: (15,), \
+                17: (18,), \
+                19: (20,), \
+                21: (22,), \
+                24: (24,2,2), \
+                26: (24,2,4), \
+                28: (24,2,6), \
+                31: (24,2,9), \
+                33: (24,2,11)}
+        extras_t = {0: (24,2,13,2,1), \
+                    1: (24,2,13,2,3), \
+                    2: (24,2,13,2,5,2,1), \
+                    3: (24,2,13,2,5,2,3), \
+                    4: (24,2,13,2,5,2,5,2,1), \
+                    5: (24,2,13,2,5,2,5,2,3), \
+                    6: (24,2,13,2,5,2,5,2,5,2,1), \
+                    7: (24,2,13,2,5,2,5,2,5,2,3)}
+        pred_t = {0: (24,1,2), \
+                 1: (24,2,13,1), \
+                 2: (24,2,13,2,5,1), \
+                 3: (24,2,13,2,5,2,5,1),
+                 4: (24,2,13,2,5,2,5,2,5,1), 
+                 5: (24,2,13,2,5,2,5,2,5,2,5)}
+
+        if not os.path.isdir(dirpath):
+            os.mkdir(dirpath)
+        for i in range(len(self.vgg)):
+            # print(i, type(self.vgg[i]))
+            if isinstance(self.vgg[i], torch.nn.modules.conv.Conv2d):
+                w = self.vgg[i].weight.cpu().data.numpy()
+                b = self.vgg[i].bias.cpu().data.numpy()
+                # print(vgg_t[i])
+                fp = '_'.join([str(vt) for vt in vgg_t[i]])
+                w.tofile(os.path.join(dirpath, fp + "_wgts.data"))
+                b.tofile(os.path.join(dirpath, fp + "_bias.data"))
+                # print(i, w.shape)
+                # print(i, b.shape)
+        # store weights for L2 norm
+        self.L2Norm.weight.cpu().data.numpy().tofile(os.path.join(dirpath, "24_1_1_3_wgts.data"))
+        # store weights for extras
+        for i in range(len(self.extras)):
+            # print(i, type(self.extras[i]))
+            w = self.extras[i].weight.cpu().data.numpy()
+            b = self.extras[i].bias.cpu().data.numpy()
+            fp = '_'.join([str(vt) for vt in extras_t[i]])
+            w.tofile(os.path.join(dirpath, fp + "_wgts.data"))
+            b.tofile(os.path.join(dirpath, fp + "_bias.data"))
+        # store prediction weights
+        for i in range(len(self.loc)):
+            loc_w = self.loc[i].weight.cpu().data.numpy()
+            loc_b = self.loc[i].bias.cpu().data.numpy()
+            conf_w = self.conf[i].weight.cpu().data.numpy()
+            conf_b = self.conf[i].bias.cpu().data.numpy()
+
+            dest_w = np.empty((loc_w.shape[0]+conf_w.shape[0], loc_w.shape[1], loc_w.shape[2], loc_w.shape[3]), dtype=loc_w.dtype)
+            dest_b = np.empty((loc_w.shape[0]+conf_w.shape[0],), dtype=loc_w.dtype)
+
+            n_anchs = int(loc_w.shape[0] / 4)
+            loc_i = 0
+            clsf_i = 0
+            dest_i = 0
+            for _ in range(n_anchs):
+                loc_end = loc_i + 4
+                clsf_end = clsf_i + self.num_classes
+
+                c_loc_w = loc_w[loc_i:loc_end]
+                c_loc_b = loc_b[loc_i:loc_end]
+                c_conf_w = conf_w[clsf_i:clsf_end]
+                c_conf_b = conf_b[clsf_i:clsf_end]
+
+                dest_w[dest_i:dest_i+4] = c_loc_w[[1,3,0,2]]
+                dest_b[dest_i:dest_i+4] = c_loc_b[[1,3,0,2]]
+                # print(np.all(dest_w[3,:,:,:] == c_loc_w[2,:,:,:]))
+                dest_i += 4
+                dest_w[dest_i:dest_i+self.num_classes] = c_conf_w
+                dest_b[dest_i:dest_i+self.num_classes] = c_conf_b
+                dest_i += self.num_classes
+
+                loc_i = loc_end
+                clsf_i = clsf_end
+
+            assert loc_i == loc_w.shape[0]
+            assert clsf_i == conf_w.shape[0]
+            assert dest_i == loc_w.shape[0]+conf_w.shape[0]
+
+            fp = '_'.join([str(vt) for vt in pred_t[i]])
+            dest_w.tofile(os.path.join(dirpath, fp + "_wgts.data"))
+            dest_b.tofile(os.path.join(dirpath, fp + "_bias.data"))
+
     def load_weights(self, base_file):
         other, ext = os.path.splitext(base_file)
         if ext == '.pkl' or '.pth':

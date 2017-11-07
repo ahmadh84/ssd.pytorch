@@ -65,11 +65,18 @@ gamma = 0.1
 momentum = 0.9
 
 if args.visdom:
+    print("using Visdom")
     import visdom
     viz = visdom.Visdom()
 
 ssd_net = build_ssd('train', 300, num_classes)
 net = ssd_net
+
+num_params = 0
+for parameter in net.parameters():
+    print(parameter.size())
+    num_params += parameter.numel()
+print("# of parameters in the network", num_params)
 
 if args.cuda:
     net = torch.nn.DataParallel(ssd_net)
@@ -118,7 +125,8 @@ def train():
     print('Loading Dataset...')
 
     dataset = VOCDetection(args.voc_root, train_sets, SSDAugmentation(
-        ssd_dim, means), AnnotationTransform())
+        # ssd_dim, means), AnnotationTransform())
+        ssd_dim, means), AnnotationTransform(keep_difficult=True))
 
     epoch_size = len(dataset) // args.batch_size
     print('Training SSD on', dataset.name)

@@ -56,13 +56,17 @@ if args.cuda and torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
 
-annopath = os.path.join(args.voc_root, 'VOC2007', 'Annotations', '%s.xml')
-imgpath = os.path.join(args.voc_root, 'VOC2007', 'JPEGImages', '%s.jpg')
-imgsetpath = os.path.join(args.voc_root, 'VOC2007', 'ImageSets', 'Main', '{:s}.txt')
+voc_subdir = 'everingham_IJCV_2010_pascalvoc--voc2007'
+
+annopath = os.path.join(args.voc_root, voc_subdir, 'Annotations', '%s.xml')
+imgpath = os.path.join(args.voc_root, voc_subdir, 'JPEGImages', '%s.jpg')
+imgsetpath = os.path.join(args.voc_root, voc_subdir, 'ImageSets', 'Main', '{:s}.txt')
 YEAR = '2007'
-devkit_path = VOCroot + 'VOC' + YEAR
+# devkit_path = VOCroot + 'VOC' + YEAR
+devkit_path = os.path.join(args.voc_root, voc_subdir, 'API')
 dataset_mean = (104, 117, 123)
 set_type = 'test'
+print(devkit_path)
 
 class Timer(object):
     """A simple timer."""
@@ -177,6 +181,7 @@ def do_python_eval(output_dir='output', use_07=True):
     print('Results computed with the **unofficial** Python eval code.')
     print('Results should be very close to the official MATLAB eval code.')
     print('--------------------------------------------------------------')
+    return np.mean(aps)
 
 
 def voc_ap(rec, prec, use_07_metric=True):
@@ -350,7 +355,7 @@ cachedir: Directory for caching the annotations
 
 
 def test_net(save_folder, net, cuda, dataset, transform, top_k,
-             im_size=300, thresh=0.05):
+             im_size=300, thresh=0.05, model_fp=""):
     """Test a Fast R-CNN network on an image database."""
     num_images = len(dataset)
     # all detections are collected into:
@@ -391,34 +396,45 @@ def test_net(save_folder, net, cuda, dataset, transform, top_k,
                 .astype(np.float32, copy=False)
             all_boxes[j][i] = cls_dets
 
-        print('im_detect: {:d}/{:d} {:.3f}s'.format(i + 1,
+        print('{} : im_detect: {:d}/{:d} {:.3f}s'.format(model_fp, i + 1,
                                                     num_images, detect_time))
 
     with open(det_file, 'wb') as f:
         pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
 
     print('Evaluating detections')
-    evaluate_detections(all_boxes, output_dir, dataset)
+    return evaluate_detections(all_boxes, output_dir, dataset)
 
 
 def evaluate_detections(box_list, output_dir, dataset):
     write_voc_results_file(box_list, dataset)
-    do_python_eval(output_dir)
+    return do_python_eval(output_dir, use_07=False)
 
 
-if __name__ == '__main__':
+def eval_model(model_fp, limit_num_ims=None):
     # load net
     num_classes = len(VOC_CLASSES) + 1 # +1 background
     net = build_ssd('test', 300, num_classes) # initialize SSD
-    net.load_state_dict(torch.load(args.trained_model))
+    net.load_state_dict(torch.load(model_fp))
     net.eval()
     print('Finished loading model!')
     # load data
-    dataset = VOCDetection(args.voc_root, [('2007', set_type)], BaseTransform(300, dataset_mean), AnnotationTransform())
+    dataset = VOCDetection(args.voc_root, [(voc_subdir, '2007', set_type)], \
+                           BaseTransform(300, dataset_mean), AnnotationTransform(), \
+                           limit_num_ims=limit_num_ims)
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True
     # evaluation
-    test_net(args.save_folder, net, args.cuda, dataset,
-             BaseTransform(net.size, dataset_mean), args.top_k, 300,
-             thresh=args.confidence_threshold)
+    mean_ap = test_net(args.save_folder, net, args.cuda, dataset,
+                    BaseTransform(net.size, dataset_mean), args.top_k, 300,
+                    thresh=args.confidence_threshold, model_fp)
+    return mean_ap
+
+if __name__ == '__main__':
+    with open("mean_ap_scores.txt", "w+") as fd:
+        for itr in range(0, 100001, 2500):
+            # args.trained_model
+            model_fp = "weights/ssd300_0712_run_%d.pth" % itr
+            eval_model(model_fp)
+            fd.write("%d: %.4f\n" % (itr, mean_ap))
