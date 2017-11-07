@@ -100,7 +100,8 @@ def xavier(param):
 
 def weights_init(m):
     if isinstance(m, nn.Conv2d):
-        xavier(m.weight.data)
+        # xavier(m.weight.data)
+        m.weight.data.fill_(1e-6)
         m.bias.data.zero_()
 
 
@@ -116,7 +117,51 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr,
 criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
 
 
+print("//////////////////////////////////////////////////////////////////////")
+print("///////////////////Comparing Torch Net weights////////////////////////")
+from torch.utils.serialization import load_lua
+load_f = load_lua("/home/ahumayun/Dropbox/vid_obj_detection/model_vgg_orig.t7", unknown_classes=True)
+# print(load_f)
+# print(load_f.get(0))
+# print(load_f.get(23).get(1))
+# print(ssd_net.vgg)
+layer_mapping = {0: load_f.get(0),
+                2: load_f.get(2),
+                5: load_f.get(5),
+                7: load_f.get(7),
+                10: load_f.get(10),
+                12: load_f.get(12),
+                14: load_f.get(14),
+                17: load_f.get(17),
+                19: load_f.get(19),
+                21: load_f.get(21),
+                24: load_f.get(23).get(1).get(1),
+                26: load_f.get(23).get(1).get(3),
+                28: load_f.get(23).get(1).get(5),
+                31: load_f.get(23).get(1).get(8),
+                33: load_f.get(23).get(1).get(10)}
+for vgg_i, lua_mod in layer_mapping.items():
+    vgg_mod = ssd_net.vgg[vgg_i]
+    print(vgg_i, vgg_mod)
+    vgg_w = vgg_mod.weight.cpu()
+    vgg_b = vgg_mod.bias.cpu()
+    lua_w = lua_mod.weight.squeeze(2)
+    lua_b = lua_mod.bias
+
+    assert (vgg_w.size() == lua_w.size())
+    assert (vgg_b.size() == lua_b.size())
+
+    assert ((vgg_b.data == lua_b).all())
+    assert ((vgg_w.data == lua_w).all())
+print("//////////////////////////////////////////////////////////////////////")
+
+
+ssd_net.save_weights("/home/ahumayun/videovolumes/models/tmp_ssd_wghts_init")
+
 def train():
+    fd = open("loss_vals.txt", "w+")
+    fd2 = open("loss_vals_indv.txt", "w+")
+
     net.train()
     # loss counters
     loc_loss = 0  # epoch
@@ -155,7 +200,7 @@ def train():
         )
     batch_iterator = None
     data_loader = data.DataLoader(dataset, batch_size, num_workers=args.num_workers,
-                                  shuffle=True, collate_fn=detection_collate, pin_memory=True)
+                                  shuffle=False, collate_fn=detection_collate, pin_memory=True)
     for iteration in range(args.start_iter, max_iter):
         if (not batch_iterator) or (iteration % epoch_size == 0):
             # create batch iterator
@@ -176,8 +221,12 @@ def train():
             conf_loss = 0
             epoch += 1
 
+        print("///////////////////////////////////////////////////////////////////////////////////////////////////////////")
         # load train data
         images, targets = next(batch_iterator)
+
+        # images.numpy().tofile("x_" + str(iteration) + ".data")
+        # torch.save(images, 'x_' + str(iteration) + '.pt')
 
         if args.cuda:
             images = Variable(images.cuda())
@@ -188,21 +237,39 @@ def train():
         # forward
         t0 = time.time()
         out = net(images)
+
+        # torch.save(out, 'y_' + str(iteration) + '.pt')
         # backprop
         optimizer.zero_grad()
-        loss_l, loss_c = criterion(out, targets)
+        loss_l, loss_c = criterion(out, targets, fd, fd2)
         loss = loss_l + loss_c
+
+        print("Localization loss nrmlz\t", loss_l.data[0])
+        print("Classification&Background loss nrmlz\t", loss_c.data[0])
+        print("Total loss \t", loss.data[0])
+        print("ITERATION\t " + str(iteration+1))
+
+        for pg in optimizer.param_groups:
+            print("LR %f | WD %f | Mom %f | Damp %f" % (pg['lr'], pg['weight_decay'], pg['momentum'], pg['dampening']))
+
         loss.backward()
         optimizer.step()
         t1 = time.time()
         loc_loss += loss_l.data[0]
         conf_loss += loss_c.data[0]
-        if iteration % 10 == 0:
+
+        if iteration % 1 == 0:
             print('Timer: %.4f sec.' % (t1 - t0))
-            print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
+            # print('iter ' + repr(iteration) + ' || Loss: %.4f || Lclz Loss: %.4f || Clsf Loss: %.4f' % (loss.data[0], loss_l.data[0], loss_c.data[0]))
+            # fd.write('iter ' + repr(iteration) + ' || Loss: %.4f || Lclz Loss: %.4f || Clsf Loss: %.4f\n' % (loss.data[0], loss_l.data[0], loss_c.data[0]))
+            fd.flush()
             if args.visdom and args.send_images_to_visdom:
                 random_batch_index = np.random.randint(images.size(0))
                 viz.image(images.data[random_batch_index].cpu().numpy())
+        # if iteration == 0:
+        #     ssd_net.save_weights("/home/ahumayun/videovolumes/models/tmp_ssd_wghts")
+        if iteration == 399:
+            exit()
         if args.visdom:
             viz.line(
                 X=torch.ones((1, 3)).cpu() * iteration,
@@ -220,11 +287,13 @@ def train():
                     win=epoch_lot,
                     update=True
                 )
-        if iteration % 5000 == 0:
+        if iteration % 2500 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_0712_' +
+            torch.save(ssd_net.state_dict(), 'weights/ssd300_0712_run_' +
                        repr(iteration) + '.pth')
     torch.save(ssd_net.state_dict(), args.save_folder + '' + args.version + '.pth')
+    fd.close()
+    fd2.close()
 
 
 def adjust_learning_rate(optimizer, gamma, step):

@@ -48,6 +48,7 @@ class AnnotationTransform(object):
     def __init__(self, class_to_ind=None, keep_difficult=False):
         self.class_to_ind = class_to_ind or dict(
             zip(VOC_CLASSES, range(len(VOC_CLASSES))))
+        print(self.class_to_ind)
         self.keep_difficult = keep_difficult
 
     def __call__(self, target, width, height):
@@ -71,6 +72,7 @@ class AnnotationTransform(object):
             for i, pt in enumerate(pts):
                 cur_pt = int(bbox.find(pt).text) - 1
                 # scale height or width
+                # cur_pt = cur_pt / (width-1) if i % 2 == 0 else cur_pt / (height-1)
                 cur_pt = cur_pt / width if i % 2 == 0 else cur_pt / height
                 bndbox.append(cur_pt)
             label_idx = self.class_to_ind[name]
@@ -134,6 +136,7 @@ class VOCDetection(data.Dataset):
     def pull_item(self, index):
         img_id = self.ids[index]
 
+        print(self._imgpath % img_id)
         target = ET.parse(self._annopath % img_id).getroot()
         img = cv2.imread(self._imgpath % img_id)
         height, width, channels = img.shape

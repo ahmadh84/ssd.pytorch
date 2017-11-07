@@ -92,6 +92,10 @@ class SSD(nn.Module):
             loc.append(l(x).permute(0, 2, 3, 1).contiguous())
             conf.append(c(x).permute(0, 2, 3, 1).contiguous())
 
+        # for i,(l,c) in enumerate(zip(loc, conf)):
+        #     print(i, l.size())
+        #     print(i, c.size())
+
         loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
         conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
         if self.phase == "test":
@@ -106,6 +110,18 @@ class SSD(nn.Module):
                 conf.view(conf.size(0), -1, self.num_classes),
                 self.priors
             )
+
+            # def grad_manip_lclz(grad_x):
+            #     tmp = grad_x.data.cpu()
+            #     torch.save(tmp, "loc_tnsr.pt")
+            #     print(type(grad_x))
+            # def grad_manip_clss(grad_x):
+            #     tmp = grad_x.data.cpu()
+            #     torch.save(tmp, "clss_tnsr.pt")
+            #     print(type(grad_x))
+            # output[0].register_hook(grad_manip_lclz)
+            # output[1].register_hook(grad_manip_clss)
+
         return output
 
     def save_weights(self, dirpath):
