@@ -130,8 +130,8 @@ class MultiBoxLoss(nn.Module):
         # print("Labels mat: ", conf_t.size())
         neg = idx_rank < num_neg.expand_as(idx_rank)
         # print(loss_c[neg])
-        # assert neg[pos].long().sum().data[0] == 0, "Negative positives overlap"
-        # assert pos[neg].long().sum().data[0] == 0, "Negative positives overlap"
+        assert neg[pos].long().sum().data[0] == 0, "Negative positives overlap"
+        assert pos[neg].long().sum().data[0] == 0, "Negative positives overlap"
 
         torch.save(neg.data.cpu(), 'ngtv_smplng_neg_' + str(iteration) + '.pt')
         torch.save(loss_c.data.cpu(), 'ngtv_smplng_lossc_' + str(iteration) + '.pt')
@@ -167,10 +167,11 @@ class MultiBoxLoss(nn.Module):
         # write individual localization and positive classification losses to file
         for i in range(pos_ind.size(0)):
             smpl_ind, anch_ind = pos_ind[i][0], pos_ind[i][1]
+
             psv_conf_p = conf_data[smpl_ind][anch_ind].view(-1, self.num_classes)
-            l = F.cross_entropy(psv_conf_p, conf_t[smpl_ind][anch_ind], size_average=False)
-            fd2.write("%d %d %d %d %.8f\n" % (iteration, 2, smpl_ind+1, anch_ind+1, l.data[0]))
-            tol_cp += l.data[0]
+            loss_ce = F.cross_entropy(psv_conf_p, conf_t[smpl_ind][anch_ind], size_average=False)
+            fd2.write("%d %d %d %d %.8f\n" % (iteration, 2, smpl_ind+1, anch_ind+1, loss_ce.data[0]))
+            tol_cp += loss_ce.data[0]
 
             loc_p = loc_data[smpl_ind][anch_ind].view(-1, 4)
             loc_t2 = loc_t[smpl_ind][anch_ind].view(-1, 4)
@@ -189,11 +190,11 @@ class MultiBoxLoss(nn.Module):
 
         import math
         # print(loss_l.data[0] - tot_l)
-        assert math.fabs(loss_l.data[0] - tot_l) < 1e-1
+        assert math.fabs(loss_l.data[0] - tot_l) < 1e-4
         # print(loss_c_psv.data[0] - tol_cp)
-        assert math.fabs(loss_c_psv.data[0] - tol_cp) < 1e-1
+        assert math.fabs(loss_c_psv.data[0] - tol_cp) < 1e-4
         # print(loss_c_ngv.data[0] - tol_cn)
-        assert math.fabs(loss_c_ngv.data[0] - tol_cn) < 1e-1
+        assert math.fabs(loss_c_ngv.data[0] - tol_cn) < 1e-4
 
         N = num_pos.data.sum()
         loss_l /= N

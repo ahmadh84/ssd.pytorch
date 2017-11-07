@@ -268,7 +268,7 @@ def train():
                 viz.image(images.data[random_batch_index].cpu().numpy())
         # if iteration == 0:
         #     ssd_net.save_weights("/home/ahumayun/videovolumes/models/tmp_ssd_wghts")
-        if iteration == 399:
+        if iteration == 6:
             exit()
         if args.visdom:
             viz.line(
