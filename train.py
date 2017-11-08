@@ -100,8 +100,8 @@ def xavier(param):
 
 def weights_init(m):
     if isinstance(m, nn.Conv2d):
-        # xavier(m.weight.data)
-        m.weight.data.fill_(1e-6)
+        xavier(m.weight.data)
+        # m.weight.data.fill_(1e-6)
         m.bias.data.zero_()
 
 
@@ -266,9 +266,9 @@ def train():
             if args.visdom and args.send_images_to_visdom:
                 random_batch_index = np.random.randint(images.size(0))
                 viz.image(images.data[random_batch_index].cpu().numpy())
-        # if iteration == 0:
+        # if iteration == 15:
         #     ssd_net.save_weights("/home/ahumayun/videovolumes/models/tmp_ssd_wghts")
-        if iteration == 6:
+        if iteration == 399:
             exit()
         if args.visdom:
             viz.line(

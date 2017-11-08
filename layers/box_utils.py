@@ -115,6 +115,7 @@ def match(threshold, truths, priors, variances, labels, loc_t, conf_t, obj_t, id
     best_truth_idx = best_truth_idx.add(1)
     best_truth_idx[best_truth_overlap < threshold] = 0
     obj_t[idx] = best_truth_idx
+    return overlaps
 
 
 def encode(matched, priors, variances):
