@@ -5,6 +5,48 @@ from torch.autograd import Variable
 from layers import *
 from data import v2
 import os
+import numpy as np
+
+# weight mappings to VOD code
+vod_vgg_t = {0: (1,), \
+             2: (3,), \
+             5: (6,), \
+             7: (8,), \
+             10: (11,), \
+             12: (13,), \
+             14: (15,), \
+             17: (18,), \
+             19: (20,), \
+             21: (22,), \
+             24: (24,2,2), \
+             26: (24,2,4), \
+             28: (24,2,6), \
+             31: (24,2,9), \
+             33: (24,2,11)}
+vod_extras_t = {0: (24,2,13,2,1), \
+                1: (24,2,13,2,3), \
+                2: (24,2,13,2,5,2,1), \
+                3: (24,2,13,2,5,2,3), \
+                4: (24,2,13,2,5,2,5,2,1), \
+                5: (24,2,13,2,5,2,5,2,3), \
+                6: (24,2,13,2,5,2,5,2,5,2,1), \
+                7: (24,2,13,2,5,2,5,2,5,2,3)}
+vod_pred_t = {0: (24,1,2), \
+              1: (24,2,13,1), \
+              2: (24,2,13,2,5,1), \
+              3: (24,2,13,2,5,2,5,1),
+              4: (24,2,13,2,5,2,5,2,5,1), \
+              5: (24,2,13,2,5,2,5,2,5,2,5)}
+
+def copy_from_file(trch_var, filepath):
+    np_vec = np.fromfile(filepath, dtype=np.float32)
+    assert np_vec.size == trch_var.data.numel(), "Not the same number of elements: " + filepath
+    tnsr = torch.from_numpy(np_vec)
+    trch_var.data.copy_(tnsr)
+
+def write_to_file(trch_var, filepath):
+    tnsr = trch_var.cpu().data.numpy()
+    tnsr.tofile(filepath)
 
 
 class SSD(nn.Module):
@@ -124,61 +166,78 @@ class SSD(nn.Module):
 
         return output
 
-    def save_weights(self, dirpath):
-        import numpy as np
-        vgg_t = {0: (1,), \
-                2: (3,), \
-                5: (6,), \
-                7: (8,), \
-                10: (11,), \
-                12: (13,), \
-                14: (15,), \
-                17: (18,), \
-                19: (20,), \
-                21: (22,), \
-                24: (24,2,2), \
-                26: (24,2,4), \
-                28: (24,2,6), \
-                31: (24,2,9), \
-                33: (24,2,11)}
-        extras_t = {0: (24,2,13,2,1), \
-                    1: (24,2,13,2,3), \
-                    2: (24,2,13,2,5,2,1), \
-                    3: (24,2,13,2,5,2,3), \
-                    4: (24,2,13,2,5,2,5,2,1), \
-                    5: (24,2,13,2,5,2,5,2,3), \
-                    6: (24,2,13,2,5,2,5,2,5,2,1), \
-                    7: (24,2,13,2,5,2,5,2,5,2,3)}
-        pred_t = {0: (24,1,2), \
-                 1: (24,2,13,1), \
-                 2: (24,2,13,2,5,1), \
-                 3: (24,2,13,2,5,2,5,1),
-                 4: (24,2,13,2,5,2,5,2,5,1), 
-                 5: (24,2,13,2,5,2,5,2,5,2,5)}
-
-        if not os.path.isdir(dirpath):
-            os.mkdir(dirpath)
+    def __op_base_net_weights(self, dirpath, weight_file_op=write_to_file):
         for i in range(len(self.vgg)):
             # print(i, type(self.vgg[i]))
             if isinstance(self.vgg[i], torch.nn.modules.conv.Conv2d):
-                w = self.vgg[i].weight.cpu().data.numpy()
-                b = self.vgg[i].bias.cpu().data.numpy()
-                # print(vgg_t[i])
-                fp = '_'.join([str(vt) for vt in vgg_t[i]])
-                w.tofile(os.path.join(dirpath, fp + "_wgts.data"))
-                b.tofile(os.path.join(dirpath, fp + "_bias.data"))
-                # print(i, w.shape)
-                # print(i, b.shape)
+                # print(vod_vgg_t[i])
+                fp = '_'.join([str(vt) for vt in vod_vgg_t[i]])
+                fp = os.path.join(dirpath, fp)
+                weight_file_op(self.vgg[i].weight, fp + "_wgts.data")
+                weight_file_op(self.vgg[i].bias, fp + "_bias.data")
         # store weights for L2 norm
-        self.L2Norm.weight.cpu().data.numpy().tofile(os.path.join(dirpath, "24_1_1_3_wgts.data"))
+        weight_file_op(self.L2Norm.weight, os.path.join(dirpath, "24_1_1_3_wgts.data"))
         # store weights for extras
         for i in range(len(self.extras)):
             # print(i, type(self.extras[i]))
-            w = self.extras[i].weight.cpu().data.numpy()
-            b = self.extras[i].bias.cpu().data.numpy()
-            fp = '_'.join([str(vt) for vt in extras_t[i]])
-            w.tofile(os.path.join(dirpath, fp + "_wgts.data"))
-            b.tofile(os.path.join(dirpath, fp + "_bias.data"))
+            fp = '_'.join([str(vt) for vt in vod_extras_t[i]])
+            fp = os.path.join(dirpath, fp)
+            weight_file_op(self.extras[i].weight, fp + "_wgts.data")
+            weight_file_op(self.extras[i].bias, fp + "_bias.data")
+
+
+    def load_weights_from_dir(self, dirpath):
+        print(">> LOADING WEIGHTS FROM DIRECTORY: " + dirpath)
+        assert os.path.isdir(dirpath), "Directory '" + dirpath + "' doesnt exist"
+        self.__op_base_net_weights(dirpath, copy_from_file)
+        # load prediction weights
+        for i in range(len(self.loc)):
+            loc_w = self.loc[i].weight.data
+            loc_b = self.loc[i].bias.data
+            conf_w = self.conf[i].weight.data
+            conf_b = self.conf[i].bias.data
+
+            fp = '_'.join([str(vt) for vt in vod_pred_t[i]])
+            fp = os.path.join(dirpath, fp)
+            src_w = np.fromfile(fp + "_wgts.data", dtype=np.float32)
+            src_b = np.fromfile(fp + "_bias.data", dtype=np.float32)
+            src_w = src_w.reshape((loc_w.shape[0]+conf_w.shape[0], loc_w.shape[1], loc_w.shape[2], loc_w.shape[3]))
+            src_b = src_b.reshape((loc_w.shape[0]+conf_w.shape[0],))
+
+            n_anchs = int(loc_w.shape[0] / 4)
+            loc_i = 0
+            clsf_i = 0
+            src_i = 0
+            for _ in range(n_anchs):
+                loc_end = loc_i + 4
+                clsf_end = clsf_i + self.num_classes
+
+                loc_w[loc_i+1].copy_(torch.from_numpy(src_w[src_i]))
+                loc_w[loc_i+3].copy_(torch.from_numpy(src_w[src_i+1]))
+                loc_w[loc_i+0].copy_(torch.from_numpy(src_w[src_i+2]))
+                loc_w[loc_i+2].copy_(torch.from_numpy(src_w[src_i+3]))
+                loc_b[loc_i+1] = float(src_b[src_i])
+                loc_b[loc_i+3] = float(src_b[src_i+1])
+                loc_b[loc_i+0] = float(src_b[src_i+2])
+                loc_b[loc_i+2] = float(src_b[src_i+3])
+                src_i += 4
+                conf_w[clsf_i:clsf_end].copy_(torch.from_numpy(src_w[src_i:src_i+self.num_classes]))
+                conf_b[clsf_i:clsf_end].copy_(torch.from_numpy(src_b[src_i:src_i+self.num_classes]))
+
+                src_i += self.num_classes
+
+                loc_i = loc_end
+                clsf_i = clsf_end
+
+            assert loc_i == loc_w.shape[0]
+            assert clsf_i == conf_w.shape[0]
+            assert src_i == loc_w.shape[0]+conf_w.shape[0]
+
+    def save_weights_to_dir(self, dirpath):
+        print(">> SAVING WEIGHTS TO DIRECTORY: " + dirpath)
+        if not os.path.isdir(dirpath):
+            os.mkdir(dirpath)
+        self.__op_base_net_weights(dirpath, write_to_file)
         # store prediction weights
         for i in range(len(self.loc)):
             loc_w = self.loc[i].weight.cpu().data.numpy()
@@ -217,7 +276,7 @@ class SSD(nn.Module):
             assert clsf_i == conf_w.shape[0]
             assert dest_i == loc_w.shape[0]+conf_w.shape[0]
 
-            fp = '_'.join([str(vt) for vt in pred_t[i]])
+            fp = '_'.join([str(vt) for vt in vod_pred_t[i]])
             dest_w.tofile(os.path.join(dirpath, fp + "_wgts.data"))
             dest_b.tofile(os.path.join(dirpath, fp + "_bias.data"))
 

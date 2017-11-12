@@ -428,7 +428,7 @@ def eval_model(model_fp, limit_num_ims=None):
     # evaluation
     mean_ap = test_net(args.save_folder, net, args.cuda, dataset,
                     BaseTransform(net.size, dataset_mean), args.top_k, 300,
-                    thresh=args.confidence_threshold, model_fp)
+                    thresh=args.confidence_threshold, model_fp=model_fp)
     return mean_ap
 
 if __name__ == '__main__':
@@ -436,5 +436,5 @@ if __name__ == '__main__':
         for itr in range(0, 100001, 2500):
             # args.trained_model
             model_fp = "weights/ssd300_0712_run_%d.pth" % itr
-            eval_model(model_fp)
+            mean_ap = eval_model(model_fp)
             fd.write("%d: %.4f\n" % (itr, mean_ap))
